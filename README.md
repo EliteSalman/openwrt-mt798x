@@ -2,7 +2,7 @@
 
 ![OpenWrt logo](include/logo.png)
 
-A customised OpenWrt (`openwrt-25.12` / Linux 6.12) build for the **IMOU HX21 / LC-HX3001** — the same MediaTek MT7981B-based hardware sold under different regional names. The goal is **better Wi-Fi and hardware offloading out of the box**, plus a practical set of **day-to-day utilities**, without sacrificing the open-source nature of the stack.
+A customised OpenWrt (`openwrt-25.12` / Linux 6.12) tree for the **IMOU HX21 / LC-HX3001** — the same MediaTek MT7981B-based hardware sold under different regional names. It integrates patches and firmware from `mtk-openwrt-feeds` alongside a practical set of day-to-day networking, diagnostics, and system utilities, keeping the stack completely open-source.
 
 > **Project status: not ready for use.** This tree has **not yet been built with `make`**, let alone flashed or validated on real hardware. Treat everything here as work-in-progress — configs, patches, and package selections are still moving. **Do not flash this on a device you rely on.**
 
@@ -12,16 +12,14 @@ A customised OpenWrt (`openwrt-25.12` / Linux 6.12) build for the **IMOU HX21 / 
 
 ## What's Inside
 
-### Better Wi-Fi & hardware offloading out of the box
+### Wi-Fi & hardware offloading
 
-This build integrates patches, Netfilter HNAT hooks, and firmware blobs from **MediaTek’s `mtk-openwrt-feeds` (`25.12` / `autobuild/unified/filogic`)** on top of the open-source `mt76` and `mtk_eth_soc` drivers. **No proprietary or closed-source kernel drivers are used.** Specifically, the feed integration provides:
+This build integrates patches, Netfilter HNAT hooks, and firmware blobs from **MediaTek’s `mtk-openwrt-feeds` (`25.12` / `autobuild/unified/filogic`)** on top of the open-source `mt76` and `mtk_eth_soc` drivers. **No proprietary or closed-source kernel drivers are used.**
 
-* **Updated MT7981 Wi-Fi & WED firmware blobs (`.bin`)** — MediaTek publishes newer firmware images through `mtk-openwrt-feeds` (`mac80211/25.12`) than what is typically shipped in upstream OpenWrt at a given point. For the MT7981B / MT7976C radio path, this includes updated **ROM patch (`mt7981_rom_patch.bin`)**, **WM (`mt7981_wm.bin`)**, **WA (`mt7981_wa.bin`)**, and **WED Warp Offload (`mt7981_wo.bin`)** firmware images to improve radio stability, fix WED-reset edge cases, and align with vendor `mt76` driver patches.
-* **Netfilter-based HNAT & full WED integration** — upstream OpenWrt relies on generic `nftables` flow-offload hooks (`mtk_ppe`), leaving parts of the SoC's **NETSYS v2** Frame Engine, **PPE (Packet Processing Engine)**, and **WED (Wireless Ethernet Dispatch)** underutilised. The `25.12` vendor feed adds Netfilter-based **HNAT (Hardware Network Address Translation)** support, bidirectional Wi-Fi-to-Ethernet and Wi-Fi-to-Wi-Fi offload paths, and hardware reset/recovery handling.
-* **Bridging, VLAN, and flow-block offload fixes** — beyond basic NAT, the feed carries HNAT-adjacent patches for bridge/VLAN traffic offloading and flow-block handling that upstream `mt76` / `net-next` may not yet include for Linux 6.12.
-* **VHT and 256-QAM on 2.4 GHz** — this tree enables **802.11ac (VHT) and 256-QAM on the 2.4 GHz band**, which upstream `mt76` leaves disabled for MediaTek 2.4 GHz radios. This increases peak 2.4 GHz throughput on capable clients at the cost of interoperability with older or strict 802.11n-only stations.
-
-In short: upstream `mt76` provides the open-source driver and baseline flow-offload hooks; `mtk-openwrt-feeds` layers **newer MT7981/WO firmware, Netfilter HNAT bindings, and WED tuning** on top — and this tree adds **VHT + 256-QAM on 2.4 GHz**.
+* **MT7981 Wi-Fi & WED firmware blobs (`.bin`)** — includes the `mtk-openwrt-feeds` (`mac80211/25.12`) firmware set for the MT7981B / MT7976C radio path: **ROM patch (`mt7981_rom_patch.bin`)**, **WM (`mt7981_wm.bin`)**, **WA (`mt7981_wa.bin`)**, and **WED Warp Offload (`mt7981_wo.bin`)** images matching the vendor `mt76` driver patches.
+* **Netfilter-based HNAT & WED integration** — adds Netfilter-based **HNAT (Hardware Network Address Translation)** support, bidirectional Wi-Fi-to-Ethernet and Wi-Fi-to-Wi-Fi **WED (Wireless Ethernet Dispatch)** offload paths, and hardware reset/recovery handling on top of the SoC's **NETSYS v2** Frame Engine and **PPE (Packet Processing Engine)**.
+* **Bridging, VLAN, and flow-block offload patches** — includes HNAT-adjacent patches for bridge/VLAN traffic offloading and flow-block handling from the `25.12` vendor feed.
+* **Vendor VHT and 256-QAM on 2.4 GHz** — enables Broadcom-style vendor VHT extensions (`vendor_vht`) on the 2.4 GHz radio in `mt76` / `mac80211`, allowing supported clients to use VHT rate signalling instead of HT-only MCS and negotiate 256-QAM when supported.
 
 ### Hardware crypto acceleration
 
@@ -61,7 +59,7 @@ A practical set of tools for routing, diagnostics, DNS privacy, and remote manag
 
 ### Default base-system changes
 
-The default **TLS library** has been switched from **MbedTLS to OpenSSL** to keep the stack consistent and modern:
+The default **TLS library** has been switched from **MbedTLS to OpenSSL**:
 
 | From | To |
 | :--- | :--- |
