@@ -137,6 +137,7 @@ hostapd_common_add_device_config() {
 
 	config_add_int airtime_mode
 	config_add_int mbssid
+	config_add_boolean vendor_vht
 
 	hostapd_add_log_config
 }

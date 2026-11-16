@@ -313,6 +313,27 @@ function device_htmode_append(config) {
 		append_vars(config, [ 'op_class' ]);
 	}
 
+	/* Vendor VHT / 256-QAM on 2.4 GHz uses the vendor VHT IE. */
+	if (config.band == '2g' && config.vendor_vht) {
+		let vht_capab = phy_capabilities.vht_capa;
+
+		config.ieee80211ac = 0;
+		config.vht_capab = '';
+		if (vht_capab & 0x10 && config.rxldpc)
+			config.vht_capab += '[RXLDPC]';
+		if (vht_capab & 0x80 && config.tx_stbc_2by1)
+			config.vht_capab += '[TX-STBC-2BY1]';
+		let rx_stbc = [ '', '[RX-STBC-1]', '[RX-STBC-12]', '[RX-STBC-123]', '[RX-STBC-1234]' ];
+		config.vht_capab += rx_stbc[min(config.rx_stbc, (vht_capab >> 8) & 7)];
+		if (vht_capab & 0x800 && config.su_beamformer)
+			config.vht_capab += '[SU-BEAMFORMER]';
+		if (vht_capab & 0x1000 && config.su_beamformee)
+			config.vht_capab += '[SU-BEAMFORMEE]';
+
+		append('vendor_vht', 1);
+		append('vht_capab', config.vht_capab);
+	}
+
 	if (config.ieee80211ac && config.hw_mode == 'a') {
 		/* VHT capab */
 		if (config.vht_oper_chwidth < 2) {
