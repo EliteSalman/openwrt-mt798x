@@ -36,6 +36,12 @@ usage() {
 	printf "\n\t-o ==> create output file 'its_file'"
 	printf "\n\t-O ==> create config with dt overlay 'name:dtb'"
 	printf "\n\t-s ==> set FDT load address to 'addr' (hex)"
+	printf "\n\t-S ==> add signature at configurations with hint 'sign_key_name'"
+	printf "\n\t-b ==> set signature algorithm to 'sign_algo'"
+	printf "\n\t-P ==> add pqc signature at configurations with hint 'pqc_sign_key_name'"
+	printf "\n\t-p ==> set pqc signature algorithm to 'pqc_sign_algo'"
+	printf "\n\t-B ==> set firmware encryption algorithm"
+	printf "\n\t-R ==> set anti-rollback version to 'fw_ar_ver' (dec)"
 	printf "\n\t\t(can be specified more than once)\n"
 	exit 1
 }
@@ -49,7 +55,7 @@ LOADABLES=
 DTOVERLAY=
 DTADDR=
 
-while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:" OPTION
+while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:S:b:P:p:B:R:" OPTION
 do
 	case $OPTION in
 		A ) ARCH=$OPTARG;;
@@ -70,6 +76,12 @@ do
 		s ) FDTADDR=$OPTARG;;
 		H ) HASH=$OPTARG;;
 		v ) VERSION=$OPTARG;;
+		S ) SIGN_KEY_NAME=$OPTARG;;
+		b ) SIGN_ALG=$OPTARG;;
+		P ) PQC_SIGN_KEY_NAME=$OPTARG;;
+		p ) PQC_SIGN_ALG=$OPTARG;;
+		B ) FW_ENC_ALG=$OPTARG;;
+		R ) AR_VER=$OPTARG;;
 		* ) echo "Invalid option passed to '$0' (options:$*)"
 		usage;;
 	esac
@@ -93,6 +105,38 @@ if [ -n "${COMPATIBLE}" ]; then
 	COMPATIBLE_PROP="compatible = \"${COMPATIBLE}\";"
 fi
 
+# Conditionally create cipher node in FIT
+if [ -n "${FW_ENC_ALG}" ]; then
+	KERNEL_FDT_CIPHER_NODE="
+			cipher {
+				algo = \"${FW_ENC_ALG}\";
+				key-name-hint = \"kernel_key\";
+			};
+"
+	if [ -n "${INITRD}" ]; then
+		RAMDISK_CIPHER_NODE="
+			cipher {
+				algo = \"${FW_ENC_ALG}\";
+				key-name-hint = \"rootfs_key\";
+			};
+"
+		if ! echo "${INITRD}" | grep -q "cpio"; then
+			INITRD_SIZE=`stat -c %s ${INITRD}`
+
+			PKCS_PADDING_BYTES=$((16 - (INITRD_SIZE) % 16))
+			if [ "${PKCS_PADDING_BYTES}" -eq 0 ]; then
+				PKCS_PADDING_BYTES=16
+			fi
+
+			PADDING_SIZE=$((4096 - (INITRD_SIZE + PKCS_PADDING_BYTES) % 4096))
+
+			dd if="${INITRD}" of="${INITRD}.plaintext"
+			dd if=/dev/zero of="${INITRD}.plaintext" seek=${INITRD_SIZE} bs=1 count=${PADDING_SIZE}
+			INITRD="${INITRD}.plaintext"
+		fi
+	fi
+fi
+
 [ "$FDTADDR" ] && {
 	DTADDR="$FDTADDR"
 }
@@ -114,6 +158,7 @@ if [ -n "${DTB}" ]; then
 			hash${REFERENCE_CHAR}2 {
 				algo = \"${HASH}\";
 			};
+			${KERNEL_FDT_CIPHER_NODE}
 		};
 "
 	FDT_PROP="fdt = \"fdt${REFERENCE_CHAR}$FDTNUM\";"
@@ -134,6 +179,7 @@ if [ -n "${INITRD}" ]; then
 			hash${REFERENCE_CHAR}2 {
 				algo = \"${HASH}\";
 			};
+			${RAMDISK_CIPHER_NODE}
 		};
 "
 	INITRD_PROP="ramdisk=\"initrd${REFERENCE_CHAR}${INITRDNUM}\";"
@@ -160,6 +206,118 @@ if [ -n "${ROOTFS}" ]; then
 	LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
 fi
 
+# Conditionally create signature information
+if [ -n "${SIGN_KEY_NAME}" ]; then
+	if [ -z "${SIGN_ALG}" ]; then
+		SIGN_ALG="sha256,rsa2048"
+	fi
+
+	SIGN_OFFLINE=""
+	if echo "${SIGN_ALG}" | grep -q "offline"; then
+		SIGN_ALG=$(echo "${SIGN_ALG}" | sed "s/\(.*\),.*/\1/g")
+		SIGN_OFFLINE="sign-offline;"
+	fi
+
+	PADDING_PROP=""
+	if echo "${SIGN_ALG}" | grep -q "rsa"; then
+		PADDING_PROP="padding = \"pss\";"
+	fi
+
+	SIGN_IMAGES="sign-images = \"fdt\", \"kernel\""
+	if [ -n "${INITRD}" ]; then
+		SIGN_IMAGES="${SIGN_IMAGES}, \"ramdisk\""
+	fi
+
+	if [ -n "${ROOTFS}" ]; then
+		SIGN_IMAGES="${SIGN_IMAGES}, \"loadables\""
+	fi
+	SIGN_IMAGES="${SIGN_IMAGES};"
+
+	SIGNATURE="
+			signature {
+				algo = \"${SIGN_ALG}\";
+				${PADDING_PROP}
+				key-name-hint = \"${SIGN_KEY_NAME}\";
+				${SIGN_IMAGES}
+				${SIGN_OFFLINE}
+			};
+"
+
+	if [ -n "${DTOVERLAY}" ]; then
+		OVSIGN_IMAGES="sign-images = \"fdt\";"
+
+		OVSIGNATURE="
+			signature {
+				algo = \"${SIGN_ALG}\";
+				${PADDING_PROP}
+				key-name-hint = \"${SIGN_KEY_NAME}\";
+				${OVSIGN_IMAGES}
+				${SIGN_OFFLINE}
+			};
+"
+	fi
+fi
+
+# Conditionally PQC create signature information
+if [ -n "${PQC_SIGN_KEY_NAME}" ]; then
+	if [ -z "${PQC_SIGN_ALG}" ]; then
+		PQC_SIGN_ALG="mldsa87"
+	fi
+
+	PQC_SIGN_OFFLINE=""
+	if echo "${PQC_SIGN_ALG}" | grep -q "offline"; then
+		PQC_SIGN_ALG=$(echo "${PQC_SIGN_ALG}" | sed "s/\(.*\),.*/\1/g")
+		PQC_SIGN_OFFLINE="sign-offline;"
+	fi
+
+	case "${PQC_SIGN_ALG}" in
+		*,mldsa*) PQC_SIGN_ALG="${PQC_SIGN_ALG##*,}";;
+	esac
+
+	if [ -n "${SIGN_KEY_NAME}" ]; then
+		PQC_SIGN_NODE="signature${REFERENCE_CHAR}2"
+	else
+		PQC_SIGN_NODE="signature"
+	fi
+
+	PQC_SIGN_IMAGES="sign-images = \"fdt\", \"kernel\""
+	if [ -n "${INITRD}" ]; then
+		PQC_SIGN_IMAGES="${PQC_SIGN_IMAGES}, \"ramdisk\""
+	fi
+
+	if [ -n "${ROOTFS}" ]; then
+		PQC_SIGN_IMAGES="${PQC_SIGN_IMAGES}, \"loadables\""
+	fi
+	PQC_SIGN_IMAGES="${PQC_SIGN_IMAGES};"
+
+	PQC_SIGNATURE="
+			${PQC_SIGN_NODE} {
+				algo = \"${PQC_SIGN_ALG}\";
+				key-name-hint = \"${PQC_SIGN_KEY_NAME}\";
+				${PQC_SIGN_IMAGES}
+				${PQC_SIGN_OFFLINE}
+			};
+"
+
+	if [ -n "${DTOVERLAY}" ]; then
+		PQC_OVSIGN_IMAGES="sign-images = \"fdt\";"
+
+		PQC_OVSIGNATURE="
+			${PQC_SIGN_NODE} {
+				algo = \"${PQC_SIGN_ALG}\";
+				key-name-hint = \"${PQC_SIGN_KEY_NAME}\";
+				${PQC_OVSIGN_IMAGES}
+				${PQC_SIGN_OFFLINE}
+			};
+"
+	fi
+fi
+
+# Conditionally create anti-rollback version information
+if [ -n "${AR_VER}" ]; then
+	FW_AR_VER="fw_ar_ver = <${AR_VER}>;"
+fi
+
 # add DT overlay blobs
 FDTOVERLAY_NODE=""
 OVCONFIGS=""
@@ -184,6 +342,7 @@ OVCONFIGS=""
 			hash${REFERENCE_CHAR}2 {
 				algo = \"${HASH}\";
 			};
+			${KERNEL_FDT_CIPHER_NODE}
 		};
 "
 	OVCONFIGS="$OVCONFIGS
@@ -192,6 +351,9 @@ OVCONFIGS=""
 			description = \"OpenWrt ${DEVICE} overlay $ovname\";
 			fdt = \"$ovnode\";
 			${COMPATIBLE_PROP}
+			${FW_AR_VER}
+			${OVSIGNATURE}
+			${PQC_OVSIGNATURE}
 		};
 	"
 done
@@ -219,10 +381,11 @@ DATA="/dts-v1/;
 			hash${REFERENCE_CHAR}2 {
 				algo = \"$HASH\";
 			};
+			${KERNEL_FDT_CIPHER_NODE}
 		};
-${INITRD_NODE}
 ${FDT_NODE}
 ${FDTOVERLAY_NODE}
+${INITRD_NODE}
 ${ROOTFS_NODE}
 	};
 
@@ -235,6 +398,9 @@ ${ROOTFS_NODE}
 			${LOADABLES:+loadables = ${LOADABLES};}
 			${COMPATIBLE_PROP}
 			${INITRD_PROP}
+			${FW_AR_VER}
+			${SIGNATURE}
+			${PQC_SIGNATURE}
 		};
 		${OVCONFIGS}
 	};
