@@ -1,0 +1,45 @@
+diff --git a/mac80211.c b/mac80211.c
+index 084d9cc..f2553f7 100644
+--- a/mac80211.c
++++ b/mac80211.c
+@@ -293,7 +293,7 @@ static void mt76_init_stream_cap(struct mt76_phy *phy,
+ void mt76_set_stream_caps(struct mt76_phy *phy, bool vht)
+ {
+ 	if (phy->cap.has_2ghz)
+-		mt76_init_stream_cap(phy, &phy->sband_2g.sband, false);
++		mt76_init_stream_cap(phy, &phy->sband_2g.sband, vht);
+ 	if (phy->cap.has_5ghz)
+ 		mt76_init_stream_cap(phy, &phy->sband_5g.sband, vht);
+ 	if (phy->cap.has_6ghz)
+diff --git a/mt7915/init.c b/mt7915/init.c
+index 04788db..2b75171 100644
+--- a/mt7915/init.c
++++ b/mt7915/init.c
+@@ -419,6 +419,9 @@ mt7915_init_wiphy(struct mt7915_phy *phy)
+ 		wiphy->txq_memory_limit = 32 << 20; /* 32 MiB */
+ 
+ 	if (phy->mt76->cap.has_2ghz) {
++		struct ieee80211_sta_vht_cap *vht_cap;
++
++		vht_cap = &phy->mt76->sband_2g.sband.vht_cap;
+ 		phy->mt76->sband_2g.sband.ht_cap.cap |=
+ 			IEEE80211_HT_CAP_LDPC_CODING |
+ 			IEEE80211_HT_CAP_MAX_AMSDU;
+@@ -428,6 +431,17 @@ mt7915_init_wiphy(struct mt7915_phy *phy)
+ 		else
+ 			phy->mt76->sband_2g.sband.ht_cap.ampdu_density =
+ 				IEEE80211_HT_MPDU_DENSITY_2;
++
++		vht_cap->vht_supported = true;
++		vht_cap->cap |=
++			IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_11454 |
++			IEEE80211_VHT_CAP_RXLDPC |
++			IEEE80211_VHT_CAP_TXSTBC |
++			IEEE80211_VHT_CAP_RXSTBC_1 |
++			IEEE80211_VHT_CAP_SU_BEAMFORMER_CAPABLE |
++			IEEE80211_VHT_CAP_SU_BEAMFORMEE_CAPABLE |
++			(3 << IEEE80211_VHT_CAP_BEAMFORMEE_STS_SHIFT) |
++			(7 << IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_SHIFT);
+ 	}
+ 
+ 	if (phy->mt76->cap.has_5ghz) {

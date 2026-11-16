@@ -648,6 +648,11 @@
 			"type": "boolean",
 			"default": true
 		},
+		"vendor_vht": {
+			"description": "Enable 2.4 GHz Vendor VHT capability advertisement",
+			"type": "boolean",
+			"default": false
+		},
 		"spectrum_mgmt_required": {
 			"description": "Set Spectrum Management subfield in the Capability Information field",
 			"type": "boolean",
